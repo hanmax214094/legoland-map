@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Legoland Interactive Map - PoC</title>
+    <link rel="stylesheet" href="./vendor/leaflet/leaflet.css">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header class="app-header">
+        <div class="title-block">
+            <h1>Everland Interactive Map</h1>
+            <p class="subtitle">即時探索園區、搜尋設施與查看位置</p>
+        </div>
+        <button type="button" class="ghost-button" data-action="locate" aria-label="定位到我的位置">
+            <span aria-hidden="true">📍</span>
+            我的定位
+        </button>
+    </header>
+    <main class="container">
+        <aside id="facility-list" class="facility-list" aria-label="設施列表" aria-hidden="false">
+            <div id="list-controls">
+                <div class="drag-handle" aria-hidden="true"></div>
+                <label class="sr-only" for="search-box">搜尋設施</label>
+                <div class="search-field">
+                    <input type="search" id="search-box" placeholder="搜尋設施或關鍵字..." autocomplete="off" inputmode="search">
+                </div>
+                <div id="filter-buttons" role="group" aria-label="分區篩選"></div>
+            </div>
+            <div id="list-content" role="list"></div>
+        </aside>
+        <section id="map-container" class="map-container" aria-label="互動地圖">
+            <div id="map"></div>
+        </section>
+    </main>
+    <script src="./vendor/leaflet/leaflet.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
