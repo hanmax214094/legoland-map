@@ -531,7 +531,7 @@ createApp({
             L.Icon.Default.imagePath = 'vendor/leaflet/images/';
             state.map = L.map(mapElement.value, {
                 attributionControl: false
-            }).setView([37.295, 127.204], 15);
+            }).setView([37.884964932893915, 127.697034892803], 15);
 
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
