@@ -5,35 +5,290 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Legoland Interactive Map - PoC</title>
     <link rel="stylesheet" href="./vendor/leaflet/leaflet.css">
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css">    
+    <link rel="manifest" href="site.webmanifest">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" sizes="180x180">
+    <link rel="icon" type="image/png" sizes="180x180" href="apple-touch-icon.png">
+    <link rel="icon" type="image/svg+xml" href="apple-touch-icon.svg">
 </head>
 <body>
-    <header class="app-header">
-        <div class="title-block">
-            <h1>Everland Interactive Map</h1>
-            <p class="subtitle">即時探索園區、搜尋設施與查看位置</p>
-        </div>
-        <button type="button" class="ghost-button" data-action="locate" aria-label="定位到我的位置">
-            <span aria-hidden="true">📍</span>
-            我的定位
-        </button>
-    </header>
-    <main class="container">
-        <aside id="facility-list" class="facility-list" aria-label="設施列表" aria-hidden="false">
-            <div id="list-controls">
-                <div class="drag-handle" aria-hidden="true"></div>
-                <label class="sr-only" for="search-box">搜尋設施</label>
-                <div class="search-field">
-                    <input type="search" id="search-box" placeholder="搜尋設施或關鍵字..." autocomplete="off" inputmode="search">
+    <div id="app">
+        <header class="app-header">
+            <h1 class="app-title">Legoland</h1>
+            <!-- <button type="button" class="ghost-button" aria-label="定位到我的位置" @click="handleLocate">
+                <span aria-hidden="true">📍</span>
+                我的定位
+            </button> -->
+        </header>
+        <main class="container">
+            <aside
+                id="facility-list"
+                class="facility-list"
+                :class="{ open: isMobile && isListOpen }"
+                aria-label="設施列表"
+                :aria-hidden="(isMobile && !isListOpen).toString()"
+            >
+                <div id="list-controls">
+                    <div class="drag-handle" role="button" tabindex="0" aria-label="開啟或關閉設施列表"
+                        @click="toggleList()"
+                        @keydown.enter.prevent="toggleList()"
+                        @keydown.space.prevent="toggleList()"
+                    ></div>
+                    <label class="sr-only" for="search-box">搜尋設施</label>
+                    <div class="search-field">
+                        <input
+                            type="search"
+                            id="search-box"
+                            placeholder="搜尋設施或關鍵字..."
+                            autocomplete="off"
+                            inputmode="search"
+                            v-model.trim="searchTerm"
+                            @focus="openListOnMobile()"
+                        >
+                        <button
+                            v-if="isFiltering"
+                            type="button"
+                            class="clear-search"
+                            aria-label="清除搜尋與篩選"
+                            @click="resetFilters"
+                        ></button>
+                    </div>
+                    <div id="filter-buttons" role="group" aria-label="分區篩選">
+                        <button
+                            v-for="zone in filterZones"
+                            :key="zone"
+                            type="button"
+                            :class="['filter-btn', zoneClassMap[zone] || '', { active: selectedZone === zone }]"
+                            @click="selectZone(zone)"
+                            @focus="openListOnMobile()"
+                        >{{ zone }}</button>
+                    </div>
                 </div>
-                <div id="filter-buttons" role="group" aria-label="分區篩選"></div>
+                <div id="list-content" role="list" @focusin="openListOnMobile()">
+                    <template v-for="category in visibleCategories" :key="category.name">
+                        <h3
+                            class="category-header"
+                            :class="[category.zoneClass, { collapsed: category.isCollapsed }]"
+                            :data-category="category.name"
+                            role="button"
+                            tabindex="0"
+                            :aria-expanded="(!category.isCollapsed).toString()"
+                            @click="toggleCategory(category)"
+                            @keydown.enter.prevent="toggleCategory(category)"
+                            @keydown.space.prevent="toggleCategory(category)"
+                        >{{ category.name }}</h3>
+                        <ul
+                            :data-category="category.name"
+                            role="list"
+                            :class="{ collapsed: category.isCollapsed }"
+                            :aria-hidden="category.isCollapsed.toString()"
+                        >
+                            <li
+                                v-for="facility in category.visibleFacilities"
+                                :key="facility.id"
+                                :class="[
+                                    facility.zoneClass,
+                                    {
+                                        'has-menu': facility.hasMenu && !facility.isGroup,
+                                        'has-sublist': facility.isGroup || facility.locations.length > 1,
+                                        expanded: facility.showSublist,
+                                        'is-active': facility.isGroup
+                                            ? facility.childFacilities.some(child => child.id === activeFacilityId)
+                                            : activeFacilityId === facility.id
+                                    }
+                                ]"
+                                role="listitem"
+                                tabindex="0"
+                                :data-name="facility.name"
+                                :aria-expanded="(facility.isGroup || facility.locations.length > 1) ? facility.showSublist.toString() : undefined"
+                                @click="handleFacilityClick(facility)"
+                                @keydown.enter.prevent="handleFacilityKey(facility)"
+                                @keydown.space.prevent="handleFacilityKey(facility)"
+                            >
+                                <template v-if="facility.isGroup">
+                                    <div class="facility-item-row">
+                                        <span class="facility-item-name">{{ facility.name }}</span>
+                                    </div>
+                                    <ul
+                                        class="sub-list"
+                                        :class="{ collapsed: !facility.showSublist }"
+                                        role="list"
+                                        :aria-hidden="(!facility.showSublist).toString()"
+                                    >
+                                        <li
+                                            v-for="childFacility in facility.visibleChildFacilities"
+                                            :key="childFacility.id"
+                                            :class="[
+                                                childFacility.zoneClass,
+                                                {
+                                                    'has-menu': childFacility.hasMenu,
+                                                    'has-sublist': childFacility.locations.length > 1,
+                                                    expanded: childFacility.showSublist,
+                                                    'is-active': activeFacilityId === childFacility.id
+                                                }
+                                            ]"
+                                            role="listitem"
+                                            tabindex="0"
+                                            :data-name="childFacility.name"
+                                            :aria-expanded="childFacility.locations.length > 1 ? childFacility.showSublist.toString() : undefined"
+                                            @click.stop="handleNestedFacilityClick(facility, childFacility)"
+                                            @keydown.enter.prevent="handleNestedFacilityKey(facility, childFacility)"
+                                            @keydown.space.prevent="handleNestedFacilityKey(facility, childFacility)"
+                                        >
+                                            <div class="facility-item-row">
+                                                <button
+                                                    v-if="childFacility.hasMenu"
+                                                    type="button"
+                                                    class="menu-trigger"
+                                                    :aria-label="`查看${childFacility.name}菜單`"
+                                                    title="查看菜單"
+                                                    @click.stop="openMenu(childFacility)"
+                                                >
+                                                    <span class="sr-only">查看菜單</span>
+                                                </button>
+                                                <span class="facility-item-name">{{ childFacility.name }}</span>
+                                            </div>
+                                            <template v-if="childFacility.locations.length > 1">
+                                                <ul
+                                                    class="sub-list"
+                                                    :class="{ collapsed: !childFacility.showSublist }"
+                                                    role="list"
+                                                    :aria-hidden="(!childFacility.showSublist).toString()"
+                                                >
+                                                    <li
+                                                        v-for="location in childFacility.visibleLocations"
+                                                        :key="location.id"
+                                                        :data-lat="location.lat"
+                                                        :data-lng="location.lng"
+                                                        :data-parent-name="childFacility.name"
+                                                        :class="{ 'is-active': activeLocationId === location.id }"
+                                                        role="listitem"
+                                                        tabindex="0"
+                                                        @click.stop="focusLocation(childFacility, location)"
+                                                        @keydown.enter.prevent="focusLocation(childFacility, location)"
+                                                        @keydown.space.prevent="focusLocation(childFacility, location)"
+                                                    >{{ location.label }}</li>
+                                                </ul>
+                                            </template>
+                                        </li>
+                                    </ul>
+                                </template>
+                                <template v-else>
+                                    <div class="facility-item-row">
+                                        <button
+                                            v-if="facility.hasMenu"
+                                            type="button"
+                                            class="menu-trigger"
+                                            :aria-label="`查看${facility.name}菜單`"
+                                            title="查看菜單"
+                                            @click.stop="openMenu(facility)"
+                                        >
+                                            <span class="sr-only">查看菜單</span>
+                                        </button>
+                                        <span class="facility-item-name">{{ facility.name }}</span>
+                                    </div>
+                                    <template v-if="facility.locations.length > 1">
+                                        <ul
+                                            class="sub-list"
+                                            :class="{ collapsed: !facility.showSublist }"
+                                            role="list"
+                                            :aria-hidden="(!facility.showSublist).toString()"
+                                        >
+                                            <li
+                                                v-for="(location, index) in facility.visibleLocations"
+                                                :key="location.id"
+                                                :data-lat="location.lat"
+                                                :data-lng="location.lng"
+                                                :data-parent-name="facility.name"
+                                                :class="{ 'is-active': activeLocationId === location.id }"
+                                                role="listitem"
+                                                tabindex="0"
+                                                @click.stop="focusLocation(facility, location)"
+                                                @keydown.enter.prevent="focusLocation(facility, location)"
+                                                @keydown.space.prevent="focusLocation(facility, location)"
+                                            >{{ location.label }}</li>
+                                        </ul>
+                                    </template>
+                                </template>
+                            </li>
+                        </ul>
+                    </template>
+                    <p v-if="visibleCategories.length === 0" class="empty-result">無法找到符合條件的設施。</p>
+                </div>
+            </aside>
+            <section id="map-container" class="map-container" aria-label="互動地圖">
+                <div id="map" ref="mapElement"></div>
+            </section>
+        </main>
+
+        <button
+            type="button"
+            id="mobile-list-toggle"
+            v-if="isMobile"
+            :aria-expanded="isListOpen.toString()"
+            :aria-label="isListOpen ? '關閉設施列表' : '展開設施列表'"
+            @click="toggleList()"
+            @keydown.esc.prevent="closeList()"
+        >{{ isListOpen ? '×' : '≡' }}</button>
+        <div class="mobile-backdrop" :class="{ visible: isMobile && isListOpen }" @click="closeList()"></div>
+
+        <div
+            id="menu-modal"
+            class="menu-modal"
+            :class="{ visible: menuModalVisible }"
+            :aria-hidden="(!menuModalVisible).toString()"
+            ref="menuModalRef"
+            @click.self="closeMenu()"
+        >
+            <div class="menu-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="menu-modal-title">
+                <button
+                    type="button"
+                    class="menu-modal__close"
+                    aria-label="關閉菜單視窗"
+                    @click.stop="closeMenu()"
+                    @keydown.enter.prevent="closeMenu()"
+                    @keydown.space.prevent="closeMenu()"
+                    ref="menuCloseRef"
+                >
+                    <span aria-hidden="true">&times;</span>
+                    <span class="sr-only">關閉菜單視窗</span>
+                </button>
+                <div class="menu-modal__header">
+                    <p class="menu-modal__subtitle">餐點菜單</p>
+                    <h2 id="menu-modal-title" class="menu-modal__title">{{ activeMenuFacility?.name || '' }}</h2>
+                </div>
+                <div class="menu-modal__body" ref="menuBodyRef">
+                    <div class="menu-modal__list" role="list">
+                        <article
+                            v-for="menuItem in activeMenuFacility?.menuList || []"
+                            :key="menuItem.id"
+                            class="menu-card"
+                            role="listitem"
+                        >
+                            <img
+                                v-if="menuItem.menuImagUrl"
+                                class="menu-card__image"
+                                :src="menuItem.menuImagUrl"
+                                :alt="`${formatMenuName(menuItem)} 圖片`"
+                                loading="lazy"
+                            >
+                            <div class="menu-card__content">
+                                <h4 class="menu-card__title">{{ formatMenuName(menuItem) }}</h4>
+                                <p
+                                    v-if="formatMenuKoreanName(menuItem)"
+                                    class="menu-card__subtitle"
+                                >{{ formatMenuKoreanName(menuItem) }}</p>
+                                <p v-if="formatMenuSubtitle(menuItem)" class="menu-card__subtitle">{{ formatMenuSubtitle(menuItem) }}</p>
+                                <p v-if="formatMenuPrice(menuItem.menuPrice)" class="menu-card__price">價格：{{ formatMenuPrice(menuItem.menuPrice) }}</p>
+                            </div>
+                        </article>
+                    </div>
+                </div>
             </div>
-            <div id="list-content" role="list"></div>
-        </aside>
-        <section id="map-container" class="map-container" aria-label="互動地圖">
-            <div id="map"></div>
-        </section>
-    </main>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
     <script src="./vendor/leaflet/leaflet.js"></script>
     <script src="script.js"></script>
 </body>
